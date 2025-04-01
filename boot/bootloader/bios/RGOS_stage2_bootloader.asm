@@ -27,9 +27,8 @@
 %define FAT_table_loading_segment 0x1000 ; Segment where FAT32 boot sector will be loaded
 %define FAT_table_loading_offset 0x0300 ; Offset where FAT32 boot sector will be loaded
 
-%define FAT_rootdir_reading_segment 0x1000 ; Segment where FAT32 boot sector will be loaded
-%define FAT_rootdir_reading_offset 0x0200 ; Offset where FAT32 boot sector will be loaded
-
+%define FAT_cluster_reading_segment 0x1000 ; Segment where FAT32 boot sector will be loaded
+%define FAT_cluster_reading_offset 0x0200 ; Offset where FAT32 boot sector will be loaded
 
 _stage2_start:
 
@@ -51,10 +50,12 @@ _stage2_start:
 
     ; Populate the BIOS Parameter Block (BPB) info from the FAT32 boot sector
     call _populate_BPB_info 
-
+    
     ; Locate the kernel on the FAT32 partition 
     call _locate_kernel 
-    
+
+    call _load_kernel
+
     jmp $
 
 ; Initilize ds and es for second stage
@@ -217,13 +218,30 @@ _populate_BPB_info:
 
     ret
 
+BPB_info:
+    ; BPB info from the FAT32 boot sector
+    BPB_NumFATs: db 0 ; Number of FATs (1 byte)
+    BPB_FATSz32: dd 0 ; Size of each FAT in sectors (4 bytes)
+    BPB_RootClus: dd 0 ; First cluster of the root directory (4 bytes)
+    BPB_SecPerClus: db 0 ; Sectors per cluster (1 byte)
+    BPB_RsvdSecCnt: dw 0 ; Reserved sectors count (2 bytes)
+    BPB_BytsPerSec: dw 0 ; Bytes per sector in FAT32 system (2 bytes)
+
+; FAT HELPERS
+
 ; Takes cluster number in eax and calculates the logical block address (LBA) for that cluster
+; Relative to begining of FAT partition
 ; Stores lba back in eax
 _calc_cluster_lba:
 
     ; BPB_RsvdSecCnt + (BPB_NumFATs * BPB_FATSz32) + ((CLUSTER_NUM - 2) * BPB_SecPerClus)
 
-    push eax ; CLUSTER_NUM
+    ; Save cluster num
+    mov edx, eax
+    push ax
+    shr eax, 16
+    push ax 
+    mov eax, edx
 
     ; Accumulator
 
@@ -232,14 +250,16 @@ _calc_cluster_lba:
     ; Multiply FATs
 
     movzx eax, byte [BPB_NumFATs] ; Number of FATs
-    mov   ebx, dword [BPB_FATSz32] ; Size of each FAT in sectors
+    mov ebx, dword [BPB_FATSz32] ; Size of each FAT in sectors
     mul   ebx ; Multiply by size of each FAT in sectors to get total sectors for all FATs - stored in edx:eax
 
     add ecx, eax
 
-    ; Get cluster offsert in sectors
+    ; Restore cluster num
+    pop ax
+    shl eax, 16
+    pop ax 
 
-    pop eax ; CLUSTER_NUM
     sub eax, 2 ; Clusters are indexed at 2
 
     movzx ebx, byte [BPB_SecPerClus] ; Sectors per cluster
@@ -257,7 +277,7 @@ _calc_cluster_lba:
 ; Takes cluster number in esi and reads the next cluster from the FAT table
 ; Returns next cluster num back in esi
 ; End of cluster chain, returns 0xFFFFFFFF in esi
-_read_FAT_next_cluster:
+_fetch_next_FAT_cluster:
     ; Read the FAT entry for the current cluster in ESI
 
     ; First find out which sector its in 
@@ -274,7 +294,10 @@ _read_FAT_next_cluster:
     div ebx ; divde edx:eax by ebx 
 
     ; NOTE: edx also now has the remainder of this division, or the modulo, which will be uysed later
-    push edx ; Save EDX for later use, since we will need it after division
+    ; push edx - Save EDX for later use, since we will need it after division
+    push dx
+    shr edx, 16
+    push dx 
 
     ; EAX now has the sector number (relative to begining of FAT tables) in it, and EDX has the remainder
     movzx ecx, word [BPB_RsvdSecCnt]
@@ -302,13 +325,17 @@ _read_FAT_next_cluster:
     int 0x13                ; Call BIOS to read sectors
 
     ; Now the sector that we need to read is in FAT_table_loading_segment:FAT_table_loading_offset
-    jc _read_FAT_next_cluster_err ; If carry is set, there was an error reading the FAT table
+    jc _fetch_next_FAT_cluster_err ; If carry is set, there was an error reading the FAT table
 
     ; Now read the next cluster number from the FAT table
     ; We need the next cluster number address offset within the sectopr we are reading 
     ; (Cluster Number * 4) % bytes per sector 
 
-    pop edx
+    ; Restore EDX (32-bit)
+    pop dx         
+    shl edx, 16    
+    pop dx         
+
     ; EDX still has remainder of the division from before, which is the offset within the sector to read
 
     ; So now [FAT_table_loading_segment:FAT_table_loading_offset + edx] is a double word with the next cluster number
@@ -319,17 +346,17 @@ _read_FAT_next_cluster:
     pop es ; Restore ES
 
     ; EAX now has the next cluster number
-    cmp eax, 0x0FFFFFF7 
-    jg _read_FAT_next_cluster_EOF
+    cmp eax, 0x0FFFFFF8
+    jge _fetch_next_FAT_cluster_EOF
     
     ret 
 
-_read_FAT_next_cluster_EOF:
+_fetch_next_FAT_cluster_EOF:
     mov esi, 0xFFFFFFFF ; End of cluster chain, set ESI to 0xFFFFFFFF to indicate end of chain
 
     ret
 
-_read_FAT_next_cluster_err:
+_fetch_next_FAT_cluster_err:
     mov si, read_fat_table_sector_eemsg
     call _print_line ; Print error message for reading FAT table sector
 
@@ -345,154 +372,233 @@ READ_FAT_TABLE_DAP:
     dd 0      ; Sector to start at, quad word, but only first double will be filled
     dd 0 
 
-BPB_info:
-    ; BPB info from the FAT32 boot sector
-    BPB_NumFATs: db 0 ; Number of FATs (1 byte)
-    BPB_FATSz32: dd 0 ; Size of each FAT in sectors (4 bytes)
-    BPB_RootClus: dd 0 ; First cluster of the root directory (4 bytes)
-    BPB_SecPerClus: db 0 ; Sectors per cluster (1 byte)
-    BPB_RsvdSecCnt: dw 0 ; Reserved sectors count (2 bytes)
-    BPB_BytsPerSec: dw 0 ; Bytes per sector in FAT32 system (2 bytes)
+; Follows a cluster chain starting at esi
+; Calls function at ax on each cluster, with esi as the cluster number
+; Calls bx when finished
+end_follow_early: db 0 ; Returns imeaditley if this is not 0 and resets it
+_follow_FAT_cluster_chain:
+
+    ; Preserve AX
+    push ax        
+    
+    ; Preserve BX 
+    push bx      
+    
+    mov edx, esi
+    ; Preserve ESI (32-bit)
+    push si        ; Push lower 16 bits of ESI
+    shr esi, 16    ; Shift upper 16 bits into SI
+    push si        ; Push upper 16 bits of ESI
+    mov esi, edx
+    
+    call ax
+
+    ; Restore ESI (32-bit)
+    pop si         ; Pop upper 16 bits into SI
+    shl esi, 16    ; Shift upper 16 bits into the high part of ESI
+    pop si         ; Pop lower 16 bits into SI
+
+    call _fetch_next_FAT_cluster ; Find next cluster and store in ESI
+
+    ; Restore BX 
+    pop bx
+
+    ; Restore AX
+    pop ax
+
+    cmp byte [end_follow_early], 0
+    jne _follow_FAT_cluster_chain_return ; If break ealry set, return
+
+    ; Check if we reached the end of the cluster chain
+    cmp esi, 0xFFFFFFFF
+    je _follow_FAT_cluster_chain_finished ; If ESI is 0xFFFFFFFF, we reached the end of the chain
+    
+    jmp _follow_FAT_cluster_chain
+
+_follow_FAT_cluster_chain_finished:
+    call bx
+    jmp _follow_FAT_cluster_chain_return
+
+_follow_FAT_cluster_chain_return:
+    mov byte [end_follow_early], 0
+    ret
+
+; Reads the FAT cluster number in esi to memory sector by sector
+; Calls function at ax on each sector, with ES:ESI as the segment offset pointer to the first byte of the sector in memeory 
+_read_FAT_cluster_sectors:
+    mov ecx, 0 ; Amount of sectors read
+
+    _read_FAT_cluster_sectors_loop:
+
+        ; push ax
+        push ax
+
+        ; push ecx
+        push cx
+        shr ecx, 16
+        push cx
+
+        mov eax, esi
+
+        call _calc_cluster_lba ; eax now holds cluster LBA
+        add eax, dword [FAT_starting_lba] ; add offset from begging of partition
+
+        ; pop ecx
+        pop cx
+        shl ecx, 16
+        pop cx
+
+        add eax, ecx ; Add the number of sectors read so far to the current LBA
+        mov dword [read_cluster_sectors_start], eax ; Set the starting sector for the read operation
+        
+
+        mov eax, 0
+        mov esi, 0
+
+        mov ah, 0x42                     ; BIOS function for extended read sectors
+        mov dl, [rgos_bd]                ; dl is the device to read from (boot drive)
+        mov si, read_cluster_sectors_DAP ; A disk address packet (DAP) that describes what to read and where
+        int 0x13                         ; Call BIOS to read sectors
+        
+        ; pop ax
+        pop ax
+
+        jc _read_FAT_cluster_sectors_err ; If carry is set, there was an error reading the sector
+
+        mov dx, FAT_cluster_reading_segment
+
+        push cx
+        shr ecx, 16
+        push cx
+
+        mov si, FAT_cluster_reading_offset
+
+        call ax ; Call to process entries in the root directory for the current sector
+
+        pop cx
+        shl ecx, 16
+        pop cx
+
+        add ecx, 1 ; Increment the number of sectors read
+        movzx edx, byte [BPB_SecPerClus]
+        cmp ecx, edx  ; Check if we've read all sectors for this cluster
+
+        jge _read_FAT_cluster_sectors_return ; Finished sectors
+
+        jmp _read_FAT_cluster_sectors_loop
+
+    
+    read_cluster_sectors_DAP:
+        db 0x10                         ; Size of DAP
+        db 0                            ; Unused
+        dw 0x01                         ; How many sectors to read
+        dw FAT_cluster_reading_offset   ; 4 byte segment:offset pointer for where to write bytes in memory (to be filled in)
+        dw FAT_cluster_reading_segment  ; Offset first since this is little endian 
+        read_cluster_sectors_start: 
+        dd 0                            ; Sector to start at, quad word, but only first double will be filled
+        dd 0
+
+    _read_FAT_cluster_sectors_return:
+
+        ret
+
+    _read_FAT_cluster_sectors_err:
+        mov si, read_FAT_cluster_sectors_errmsg
+        call _print_line
+
+        call _error
+
+; End of FAT helpers
 
 ; Locate the kernel in the FAT32 root directory and store its cluster number in kenrel_cluster_num
 _locate_kernel:
     mov si, locate_kern_msg
     call _print_line ; Print message indicating locating kernel
 
-    call _follow_root_dir_chain
+    mov esi, [BPB_RootClus]
+    mov ax, _locate_kernel_cluster_modifier
+    mov bx, _locate_kernel_finished_root_chain
 
-    ; After following the root directory chain, check if kernel was found
-    cmp dword [kernel_cluster_num], 0
-    je _locate_kernel_not_found ; If kernel cluster number is 0, it means kernel was not found
-
-    mov si, kernel_found_msg
-    call _print_line ; Print message indicating kernel was found
+    call _follow_FAT_cluster_chain
 
     ret
 
-_locate_kernel_not_found:
-    mov si, locate_kernel_notfound_msg
-    call _print_line ; Print message indicating kernel was not found in the FAT32 root directory
+; Called on each cluster
+; ESI = cluster num
+_locate_kernel_cluster_modifier:
 
-    call _error ; Call error handler if kernel was not found
+    mov esi, esi ; Cluster Num
+    mov ax, _locate_kernel_search_sector
+    call _read_FAT_cluster_sectors
+
+    ret
+
+; Called on each sector
+; DX:SI is segment offset pointer to the first byte of the sector in memeory 
+_locate_kernel_search_sector:
+
+    mov bx, 0
+
+    _locate_kernel_search_sector_loop:
+
+        push es
+
+        mov eax, dword [kernel_target_name]
+
+        mov es, dx
+
+        mov ecx, dword es:[si + bx] ; in FAT directory entry name offset is 0
+
+        push dx
+        mov dx, word es:[si + bx + 26] ; Low word of first cluster number of file
+        mov word [kernel_first_cluster_num], dx
+        mov dx, word es:[si + bx + 20] ; High word of first cluster number of file
+        mov word [kernel_first_cluster_num + 2], dx
+        pop dx
+
+        pop es
+
+        cmp eax, ecx
+
+        je _found_kernel
+
+        add bx, 0x20 ; Increment entry 32 bytes
+        cmp bx, 0x200 ; if goes over sector
+
+        jge _locate_kernel_search_sector_over
+
+        jmp _locate_kernel_search_sector_loop
+
+
+_locate_kernel_search_sector_over:
+    ret
+
+_found_kernel:
+    ; dx contains segment
+    mov si, found_kernel_msg
+    call _print_line ; Print message indicating locating kernel
+
+    break:
+
+    mov byte [end_follow_early], 0x1 ; break early from cluster chain
+    ret
+
+_locate_kernel_finished_root_chain:
+    mov si, locate_kern_finish_chain_msg
+    call _print_line
+
+    call _error
+
+    ret
 
 kernel_target_name: dd "KERN" ; Example kernel target name to locate in the root directory
-kernel_cluster_num: dd 0 ; This will store the cluster number of the kernel if found
+kernel_first_cluster_num: dd 0 ; This will store the cluster number of the kernel if found
 
-; Follow the FAT32 root dir cluster chain
-_follow_root_dir_chain:
-
-    mov esi, [BPB_RootClus] ; ESI will be used to track the current cluster number
-
-_follow_root_dir_loop:
-
-    ; Read cluster
-    mov eax, esi ; EAX now has the current cluster number
-    call _calc_cluster_lba ; Calculate the logical block address (LBA) for the current cluster
-
-    push eax ; Preserve EAX - Cluster LBA
-    push esi ; Preserve ESI - Cluster number
-
-    call read_root_dir_cluster_sectors_init
-
-    pop eax ; Restore EAX - Cluster LBA
-    pop esi ; Restore ESI - Cluster number
-
-    cmp dword [kernel_cluster_num], 0
-    jne _follow_root_dir_finished ; If kernel was found in the previous cluster, exit loop
-
-    call _read_FAT_next_cluster
-
-    ; Check if we reached the end of the cluster chain
-    cmp esi, 0xFFFFFFFF
-    je _follow_root_dir_finished ; If ESI is 0xFFFFFFFF, we reached the end of the chain
-    
-    jmp _follow_root_dir_loop
-
-read_root_dir_cluster_sectors_init:
-
-    mov ebx, 0 ; Sectors read from the current cluster
-
-read_root_dir_cluster_sectors_loop:
-        ; Read the sectors for the current cluster
-        
-        add eax, ebx ; Add the number of sectors read so far to the current LBA
-        mov dword [root_dir_cluster_sectors_start], eax ; Set the starting sector for the read operation
-        
-        mov eax, 0
-        mov esi, 0
-
-        mov ah, 0x42            ; BIOS function for extended read sectors
-        mov dl, [rgos_bd]       ; dl is the device to read from (boot drive)
-        mov si, root_dir_cluster_sectors_DAP ; A disk address packet (DAP) that describes what to read and where
-        int 0x13                ; Call BIOS to read sectors
-
-        jc _read_rootdir_sectors_err ; If carry is set, there was an error reading the sector
-
-        push eax ; Preserve EAX for later use
-        push ebx ; Preserve EBX to track the number of sectors read
-        call read_root_dir_cluster_entries_loop_init ; Call to process entries in the root directory for the current sector
-        pop ebx ; Preserve EBX to track the number of sectors read
-        pop eax ; Restore EAX after processing entries
-
-        add ebx, 1 ; Increment the number of sectors read
-        cmp ebx, [BPB_SecPerClus] ; Check if we've read all sectors for this cluster
-        jl read_root_dir_cluster_sectors_loop ; If not, continue reading the next sector
-
-        ret
-
-root_dir_cluster_sectors_DAP:
-    db 0x10                     ; Size of DAP
-    db 0                        ; Unused
-    dw 0x01                     ; How many sectors to read
-    dw FAT_rootdir_reading_offset   ; 4 byte segment:offset pointer for where to write bytes in memory (to be filled in)
-    dw FAT_rootdir_reading_segment  ; Offset first since this is little endian 
-    root_dir_cluster_sectors_start: 
-    dd 0      ; Sector to start at, quad word, but only first double will be filled
-    dd 0
-
-read_root_dir_cluster_entries_loop_init:
-
-    mov esi, 0 ; Esi = bytes read from the sector
-
-read_root_dir_cluster_entries_loop:
-
-    push es
-    mov ax, FAT_rootdir_reading_segment ; Set ES to the segment where the root directory is loaded
-    mov es, ax ; Set ES to the segment where the root directory is loade
-    mov eax, dword [kernel_target_name] ; Assuming kernel_target_name is a string to match against
-    cmp dword es:[FAT_rootdir_reading_offset + esi], eax ; Compare with the current entry in the root directory
-    pop es ; Restore ES after checking the entry
-
-    call set_kernel_cluster ; If it matches, we found the kernel
-    
-    add esi, 0x20 ; Move to the next entry in the root directory (32 bytes per entry
-    cmp esi, 0x200 ; Check if we've processed all entries in the sector (32 bytes per entry)
-    jl read_root_dir_cluster_entries_loop ; If not, continue processing the next entr
-
-    ret 
-set_kernel_cluster:
-    mov ax, word es:[FAT_rootdir_reading_offset + esi + 26]  ; Low word cluster numebr in directory entry
-    mov [kernel_cluster_num], ax
-    mov ax, word es:[FAT_rootdir_reading_offset + esi + 20]  ; High word cluster numebr in directory entry
-    mov [kernel_cluster_num + 2], ax
+_load_kernel:
+    mov si, loading_kernel_msg
+    call _print_line
 
     ret
-    ; 
-
-_read_rootdir_sectors_err:
-    ; Error reading root directory sectors
-    mov si, read_rootdir_sectors_errmsg
-    call _print_line ; Print error message for reading root directory sectors
-
-    call _error ; Call error handler if we couldn't read the root directory sectors
-
-_follow_root_dir_finished:
-    mov si, root_dir_finished_msg
-    call _print_line ; Print message indicating finished following root directory chain
-
-    ret
-
 
 ; The info struct that will be passed to the kernel
 RGOS_INFO_STRUCT:
@@ -556,10 +662,10 @@ load_BPB_info_msg: db "Reading BPB info from FAT32 boot sector...", 0
 
 read_fat_table_sector_eemsg: db "Error reading FAT table sector!", 0
 
+read_FAT_cluster_sectors_errmsg: db "Error reading sectors from FAT cluster to memory!", 0 
+
 locate_kern_msg: db "Locating kernel in FAT32 root directory...", 0
+locate_kern_finish_chain_msg: db "No kernel in root directory cluster chain!", 0
+found_kernel_msg: db "Found kernel!", 0
 
-root_dir_finished_msg: db "Finished following root directory chain.", 0
-read_rootdir_sectors_errmsg: db "Error reading root directory sectors!", 0
-
-kernel_found_msg: db "Kernel found in FAT32 root directory!", 0
-locate_kernel_notfound_msg: db "No kernel found in FAT32 root directory (filename must start with KERN)", 0
+loading_kernel_msg: db "Loading kernel into memeory...", 0
