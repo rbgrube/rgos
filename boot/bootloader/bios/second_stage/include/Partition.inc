@@ -1,0 +1,1 @@
+extern _read_partiton_table

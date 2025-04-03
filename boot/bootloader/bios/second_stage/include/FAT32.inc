@@ -1,0 +1,8 @@
+extern _calc_cluster_lba
+
+extern _fetch_next_FAT_cluster
+
+extern end_follow_early
+extern _follow_FAT_cluster_chain
+
+extern _read_FAT_cluster_sectors

@@ -1,0 +1,16 @@
+extern startmsg 
+extern boot_device_msg 
+extern read_partition_table_msg 
+extern found_partition_msg 
+extern no_part_errmsg 
+extern read_FAT32_boot_msg 
+extern read_FAT32_boot_successmsg 
+extern read_FAT32_boot_errmsg 
+extern load_BPB_info_msg 
+extern read_fat_table_sector_eemsg 
+extern read_FAT_cluster_sectors_errmsg 
+extern locate_kern_msg 
+extern locate_kern_finish_chain_msg 
+extern found_kernel_msg 
+extern loading_kernel_msg
+extern read_sector_errmsg

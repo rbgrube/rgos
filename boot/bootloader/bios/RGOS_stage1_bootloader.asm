@@ -42,7 +42,7 @@ _stage1_start:
 
     mov si, jump_msg
     call _print_line
-
+    
     ; Jump to the memory address where the second stage bootloader is loaded
     jmp far [stage2_load_pointer]
 

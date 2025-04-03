@@ -1,0 +1,4 @@
+extern _load_FAT32_boot_sector
+
+extern _populate_BPB_info
+
