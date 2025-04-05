@@ -25,3 +25,5 @@ extern BPB_RootClus
 extern BPB_SecPerClus
 extern BPB_RsvdSecCnt
 extern BPB_BytsPerSec
+
+extern UNREAL_PROTECTED_GDT_POINTER

@@ -17,6 +17,7 @@
 %include "BootInfo.inc"
 %include "Global.inc"
 %include "Partition.inc"
+%include "ModeSwitch.inc"
 
 ; ORG 0x8000 set in linkerscript
 
@@ -48,11 +49,21 @@ _stage2_start:
     ; Locate the kernel on the FAT32 partition 
     call _locate_kernel 
 
-    call _load_kernel
+    ;call _load_kernel
+
+    mov ax, [_unreal_mode_code]
+    call _enter_unreal
 
     jmp $
 
 section .text
+
+_unreal_mode_code:
+
+    mov si, entered_unreal_comp_msg
+    call _print_line
+
+    jmp $
 
 ; Initilize ds and es for second stage
 _init_segments:
@@ -74,7 +85,7 @@ _locate_kernel:
 
     mov esi, [BPB_RootClus]
     mov ax, _locate_kernel_cluster_modifier
-    mov bx, _locate_kernel_finished_root_chain
+    mov bx, _locate_kernel_finished_root_chain  
 
     call _follow_FAT_cluster_chain
 
@@ -86,6 +97,7 @@ _locate_kernel_cluster_modifier:
 
     mov esi, esi ; Cluster Num
     mov ax, _locate_kernel_search_sector
+    
     call _read_FAT_cluster_sectors
 
     ret
@@ -117,7 +129,7 @@ _locate_kernel_search_sector:
 
         cmp eax, ecx
 
-        je _found_kernel
+        jmp _found_kernel
 
         add bx, 0x20 ; Increment entry 32 bytes
         cmp bx, 0x200 ; if goes over sector
@@ -134,7 +146,6 @@ _found_kernel:
     ; dx contains segment
     mov si, found_kernel_msg
     call _print_line ; Print message indicating locating kernel
-
 
     mov byte [end_follow_early], 0x1 ; break early from cluster chain
     ret

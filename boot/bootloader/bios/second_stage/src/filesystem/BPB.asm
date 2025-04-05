@@ -37,7 +37,6 @@ _load_FAT32_boot_sector:
     mov si, read_FAT32_boot_successmsg
     call _print_line ; Print success message
 
-    break:
     ; TODO Check validity of the FAT32 boot sector (0xAA55, 512 bytes per sector, and )
     ret
 
