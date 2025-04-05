@@ -1,0 +1,3 @@
+extern _locate_kernel
+
+extern _load_kernel

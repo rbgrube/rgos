@@ -1,1 +1,3 @@
 extern _enter_unreal
+extern _reset_real_segments
+extern _enter_protected_mode

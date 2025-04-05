@@ -14,6 +14,8 @@
 %define FAT_cluster_reading_segment 0x1000 ; Segment where FAT32 boot sector will be loaded
 %define FAT_cluster_reading_offset 0x0200 ; Offset where FAT32 boot sector will be loaded
 
+%define kernel_load_target_addr 0x100000 ; 1MB
+
 extern RGOS_INFO_STRUCT
 extern rgos_bd
 

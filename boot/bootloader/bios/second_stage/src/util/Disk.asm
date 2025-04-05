@@ -17,7 +17,7 @@ global _read_sector
 ; BX:DI = Memory location to store data in
 
 _read_sector:
-    
+
     mov word [sector_offset], di
     mov word [sector_segment], bx
 

@@ -96,17 +96,12 @@ _fetch_next_FAT_cluster:
     adc edx, 0 ; Handle carry from addition, if any
 
     ; Now EDX:EAX has the absolute sector number to read from
+    
+    mov bx, FAT_table_loading_segment   ; BX = segment to read to
+    mov di, FAT_table_loading_offset    ; DI = offset to read to
 
-    push ds
-
-    mov cx, FAT_table_loading_segment  
-    mov ds, cx                          ; DS = segment to read to
-    mov si, FAT_table_loading_offset    ; SI = offset to read to
-
-    call _read_sector                  ; Reads 1 sector from EDX:EAX LBA on disk into DS:SI in memeory
-
-    pop ds
-
+    call _read_sector                  ; Reads 1 sector from EDX:EAX LBA on disk into BX:DI in memeory
+    
     ; Now the sector that we need to read is in FAT_table_loading_segment:FAT_table_loading_offset
     jc _fetch_next_FAT_cluster_err ; If carry is set, there was an error reading the FAT table
 
@@ -201,7 +196,7 @@ _follow_FAT_cluster_chain_return:
     ret
 
 ; Reads the FAT cluster number in esi to memory sector by sector
-; Calls function at ax on each sector, with ES:ESI as the segment offset pointer to the first byte of the sector in memeory 
+; Calls function at ax on each sector, with DX:SI as the segment offset pointer to the first byte of the sector in memeory 
 _read_FAT_cluster_sectors:
     mov ecx, 0 ; Amount of sectors read
 
