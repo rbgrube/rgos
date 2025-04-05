@@ -11,9 +11,8 @@ flowchart TD
     check_end_early[check end_follow_early]
     check_end_clusters[check if cluster number is EOF]
     endfunc[Call function at BX]
-
     return[return]
-
+    
     start --> func
     func --> fetch
     fetch --> check_end_early
