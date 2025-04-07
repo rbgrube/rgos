@@ -14,13 +14,13 @@ OBJ = $(BUILD_DIR)/obj
 
 RGOS_IMG = $(IMAGE)/rgos.img
 
-STAGE_1_BOOTLOADER_SRC = boot/bootloader/bios/RGOS_stage1_bootloader.asm
+STAGE_1_BOOTLOADER_SRC = boot/bootloader/legacy/RGOS_stage1_bootloader.asm
 STAGE_1_BOOTLOADER = $(BIN)/RGOS_stage1_bootloader.bin
 
-STAGE_2_BOOTLOADER_SRC = boot/bootloader/bios/second_stage/src
-STAGE_2_LINKERSCRIPT = boot/bootloader/bios/second_stage/linker.ld
+STAGE_2_BOOTLOADER_SRC = boot/bootloader/legacy/second_stage/src
+STAGE_2_LINKERSCRIPT = boot/bootloader/legacy/second_stage/linker.ld
 STAGE_2_BOOTLOADER = $(BIN)/RGOS_stage2_bootloader.bin
-STAGE_2_BOOTLOADER_INC = boot/bootloader/bios/second_stage/include
+STAGE_2_BOOTLOADER_INC = boot/bootloader/legacy/second_stage/include
 STAGE2_OBJ_PATH = $(OBJ)/stage2
 
 KERNEL = $(BIN)/kernel.bin
@@ -95,16 +95,24 @@ install_stage2: $(STAGE_2_BOOTLOADER)
 
 KERNEL_C_SRCS := $(wildcard $(KERNEL_SRC)/*.c)
 KERNEL_OBJS := $(patsubst $(KERNEL_SRC)/%.c, $(OBJ)/%.o, $(KERNEL_C_SRCS))
+KERNEL_ASM_SRCS := $(wildcard $(KERNEL_SRC)/*.asm)
+KERNEL_ASM_OBJS := $(patsubst $(KERNEL_SRC)/%.asm, $(OBJ)/%.o, $(KERNEL_ASM_SRCS))
 
-build_kernel: $(KERNEL_C_SRCS) $(OBJ) $(KERNEL_LINKERSCRIPT) $(DEBUG)
+build_kernel: $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) $(OBJ) $(KERNEL_LINKERSCRIPT) $(DEBUG)
 
 	@for file in $(KERNEL_C_SRCS); do \
 		obj_file="$(OBJ)/$$(basename $$file .c).o"; \
 		echo "Compiling $$file -> $$obj_file"; \
-		$(CLANG) --target=i686-elf -ffreestanding -c $$file -o $$obj_file; \
+		$(CLANG) -g --target=i686-elf -ffreestanding -c $$file -o $$obj_file; \
 	done; \
 
-	$(LD) -m elf_i386 -T$(KERNEL_LINKERSCRIPT) --oformat elf32-i386  -o $(DEBUG)/kernel.elf $(KERNEL_OBJS)
+	@for file in $(KERNEL_ASM_SRCS); do \
+		obj_file="$(OBJ)/$$(basename $$file .asm).o"; \
+		echo "Assembling $$file -> $$obj_file"; \
+		$(AS) -f elf -F dwarf -g $$file -o $$obj_file; \
+	done; \
+
+	$(LD) -m elf_i386 -T$(KERNEL_LINKERSCRIPT) --oformat elf32-i386 -z noexecstack  -o $(DEBUG)/kernel.elf $(KERNEL_OBJS) $(KERNEL_ASM_OBJS)
 
 	objcopy -O binary $(DEBUG)/kernel.elf $(KERNEL)
 
@@ -130,8 +138,8 @@ run: all
 run_GDB: all
 
 	@echo "Running bootloader in QEMU..."
-	$(QEMU) -d int -no-reboot -drive file=$(RGOS_IMG),format=raw -monitor stdio -S -gdb tcp::1234 &
-	$(GDB) -ex "target remote localhost:1234" $(DEBUG)/RGOS_stage2_bootloader.elf
+	$(QEMU) -d int -no-reboot  -drive file=$(RGOS_IMG),format=raw -monitor stdio -S -gdb tcp::1234 &
+	$(GDB) -ex "target remote localhost:1234" $(DEBUG)/kernel.elf
 
 clean:
 	@echo "Cleaning up build directories and files..."

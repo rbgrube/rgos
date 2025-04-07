@@ -1,4 +1,0 @@
-extern _handle_boot_device
-
-extern RGOS_INFO_STRUCT
-extern rgos_bd

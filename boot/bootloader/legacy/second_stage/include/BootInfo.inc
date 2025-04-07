@@ -1,0 +1,6 @@
+extern _detect_boot_media
+extern _populate_mem_map
+extern _init_vbe
+
+extern RGOS_INFO_STRUCT
+extern rgos_bd

@@ -1,4 +1,4 @@
-ENTRY(kernel_main)
+ENTRY(_bootstub)
 
 SECTIONS
 {
@@ -12,4 +12,11 @@ SECTIONS
   .bss : {
     *(.bss) /* All bss sections from all object files */
   }
+
+  .stack ALIGN(16) :
+    {
+        _kernel_stack_bottom = .;
+        . = . + 0x4000;  /* 16 KB stack */
+        _kernel_stack_top = .;
+    }
 }

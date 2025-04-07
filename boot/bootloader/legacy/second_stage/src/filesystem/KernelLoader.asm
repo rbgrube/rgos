@@ -6,6 +6,7 @@
 %include "FAT32.inc"
 %include "BPB.inc"
 %include "Global.inc"
+%include "BootInfo.inc"
 %include "ModeSwitch.inc"
 
 section .text
@@ -119,6 +120,7 @@ _load_kernel:
     call _print_line
 
     mov eax, kernel_load_target_addr
+    mov ebx, RGOS_INFO_STRUCT
     jmp _enter_protected_mode
 
     ret

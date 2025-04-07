@@ -2,9 +2,8 @@
 
 %include "Global.inc"
 %include "Output.inc"
-%include "status_msgs.inc"
 %include "Error.inc"
-
+%include "BootInfo.inc"
 
 section .text
 
@@ -41,6 +40,8 @@ _read_sector_err:
     call _error
 
 section .data
+
+read_sector_errmsg: db "Error reading disk sector!", 0
 
 SECTOR_DAP:
     db 0x10                     ; Size of DAP

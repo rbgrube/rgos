@@ -16,8 +16,9 @@
 
 %define kernel_load_target_addr 0x100000 ; 1MB
 
-extern RGOS_INFO_STRUCT
-extern rgos_bd
+%define min_vbe_xres 600
+%define min_vbe_yres 400
+%define vbe_bbp_pref 32
 
 extern fat_partition_start_lba
 
@@ -27,5 +28,3 @@ extern BPB_RootClus
 extern BPB_SecPerClus
 extern BPB_RsvdSecCnt
 extern BPB_BytsPerSec
-
-extern UNREAL_PROTECTED_GDT_POINTER

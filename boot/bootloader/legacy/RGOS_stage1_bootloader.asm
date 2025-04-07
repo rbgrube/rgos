@@ -21,14 +21,6 @@ jmp 0:_stage1_start
 ; Main for stage 1 bootloader
 _stage1_start:
 
-    ; Ensure BIOS is in text mode 
-    mov ah, 0x00
-    mov al, 0x03   ; 80x25 text mode
-    int 0x10       ; BIOS video interrupt
-
-    mov si, startmsg
-    call _print_line
-
     ; Setup the stack and segment registers
     ; Cant use 'call' becuase the return directive uses stack so 
     ; modifying the stack inside of call will cause return to break
@@ -36,6 +28,17 @@ _stage1_start:
 
     ; Hence this callback to jump to after stack init
     stack_init_callback:
+
+    ; Ensure BIOS is in text mode 
+    mov ah, 0x00
+    mov al, 0x03   ; 80x25 text mode
+    int 0x10       ; BIOS video interrupt
+
+    mov si, init_seg_stack_msg
+    call _print_line
+
+    mov si, startmsg
+    call _print_line
 
     ; Read the second stage bootloader from disk into memeory
     call _read_stage2
@@ -51,9 +54,6 @@ _stage1_start:
 
 ; Setup the stack and segment registers
 _init_seg_stack:
-
-    mov si, init_seg_stack_msg
-    call _print_line
 
     cli               ; Disable interrupts
 
@@ -71,6 +71,7 @@ _init_seg_stack:
 
     sti               ; Re-enable interrupts
 
+    
     jmp stack_init_callback
 
 ; Read stage 2 bootloader from disk into memory 
@@ -135,7 +136,7 @@ newline: db 0x0d, 0x0a, 0
 signiture: db "<RGOS Stage 1 Bootloader> ", 0
 
 startmsg: db "Executing...", 0
-init_seg_stack_msg: db "Initiating segments and stack..", 0
+init_seg_stack_msg: db "Initiated segments and stack.", 0
 detect_boot_msg: db "Detecting boot device...", 0
 read_stg2_msg: db "Reading second stage bootloader into memory...", 0
 read_stg2_errmsg: db "Error reading stage 2 into memory!", 0
