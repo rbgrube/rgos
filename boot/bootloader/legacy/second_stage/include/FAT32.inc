@@ -6,3 +6,5 @@ extern end_follow_early
 extern _follow_FAT_cluster_chain
 
 extern _read_FAT_cluster_sectors
+
+extern _find_in_FAT_dir

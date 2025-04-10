@@ -1,5 +1,5 @@
 #include <stdint.h>
-#include "rgos_info.h"
+#include "boot/bootinfo.h"
 
 void kernel_main(void) {
     unsigned int ebx_value;
@@ -18,11 +18,8 @@ void kernel_main(void) {
 
     uint32_t frame_buffer = vbe_mode_info->PhysBasePtr;
 
-    // Calculate the total size of the screen in bytes
-    uint32_t screen_size = vbe_mode_info->YResolution * vbe_mode_info->BytesPerScanLine;
-
     // Fill the screen with red color (0x00FF0000)
-    uint32_t pixel_value = 0x00FF00FF;  // Red color in RGB format
+    uint32_t pixel_value = 0x00FF0000;  // Red color in RGB format
 
     // Use memcpy or memset to fill the screen efficiently
     for (int j = 0; j < vbe_mode_info->YResolution; j++) {

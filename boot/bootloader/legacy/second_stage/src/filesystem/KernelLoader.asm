@@ -14,93 +14,57 @@ section .text
 global _locate_kernel
 ; Locate the kernel in the FAT32 root directory and store its cluster number in kenrel_cluster_num
 _locate_kernel:
-    mov si, locate_kern_msg
-    call _print_line ; Print message indicating locating kernel
 
     mov esi, [BPB_RootClus]
-    mov ax, _locate_kernel_cluster_modifier
-    mov bx, _locate_kernel_finished_root_chain  
+    mov ecx, "BOOT"
 
-    call _follow_FAT_cluster_chain
+    call _find_in_FAT_dir
+    jc _no_boot_dir
 
-    ret
+    ; info returned 
+    ; DX:SI pointer to 32 byte fat directory entry
+    push es
+    mov es, dx
+    ; Stored high first into register eax
+    mov ax, word es:[si + 20] ; First cluster high word (byte 20)
+    shl eax, 16
+    mov ax, word es:[si + 26] ; First cluster low word (byte 26)
+    pop es
+    break:
 
-; Called on each cluster
-; ESI = cluster num
-_locate_kernel_cluster_modifier:
+    ; now eax holds BOOT first cluster
+    mov esi, eax ; BOOT directory first cluster
+    mov ecx, "KERN" ; check for kernel
 
-    mov esi, esi ; Cluster Num
-    mov ax, _locate_kernel_search_sector
+    call _find_in_FAT_dir
+    jc _no_kern
+
+    push es
+    mov es, dx
+    ; Stored low first for little endian of kernel_first_cluster_num
+    mov ax, word es:[si + 26] ; First cluster low (byte 26)
+    mov [kernel_first_cluster_num], ax
+    mov ax, word es:[si + 20] ; First cluster high (byte 20)
+    mov [kernel_first_cluster_num + 2], ax
+    pop es
     
-    call _read_FAT_cluster_sectors
-
     ret
 
-; Called on each sector
-; DX:SI is segment offset pointer to the first byte of the sector in memeory 
-_locate_kernel_search_sector:
+    _no_boot_dir:
 
-    mov bx, 0
+        mov si, no_boot_dir_errmsg
+        call _print_line
 
-    _locate_kernel_search_sector_loop:
+        call _error
 
-        push es
+    _no_kern:
 
-        mov eax, dword [kernel_target_name]
+        mov si, no_kern_errmsg
+        call _print_line
 
-        mov es, dx
-
-        mov ecx, dword es:[si + bx] ; in FAT directory entry name offset is 0
-
-        cmp eax, ecx
-        je _found_kernel
-        
-        pop es
-
-        add bx, 0x20 ; Increment entry 32 bytes
-        cmp bx, 0x200 ; if goes over sector
-
-        jge _locate_kernel_search_sector_over
-
-        jmp _locate_kernel_search_sector_loop
-
-
-_locate_kernel_search_sector_over:
-    ret
-
-; es = segment of loaded root dir sector
-; si = offset of loaded root dir sector
-; bx = offset of entry in root dir sector
-_found_kernel:
-
-    push si
-    mov si, found_kernel_msg
-    call _print_line ; Print message indicating locating kernel
-    pop si
-
-    push dx
-    mov dx, word es:[si + bx + 26] ; Low word of first cluster number of file
-    mov word [kernel_first_cluster_num], dx
-    mov dx, word es:[si + bx + 20] ; High word of first cluster number of file
-    mov word [kernel_first_cluster_num + 2], dx
-    pop dx
-
-    mov byte [end_follow_early], 0x1 ; break early from cluster chain
-
-    pop es ; Retsore es before returning bc of JMP
-
-    ret
-
-_locate_kernel_finished_root_chain:
-    mov si, locate_kern_finish_chain_msg
-    call _print_line
-
-    call _error
-
-    ret
+        call _error
 
 section .data
-kernel_target_name: dd "KERN" ; Example kernel target name to locate in the root directory
 kernel_first_cluster_num: dd 0 ; This will store the cluster number of the kernel if found
 
 section .text
@@ -197,3 +161,5 @@ _kernel_cluster_finished_chain:
 section .data
 
 kernel_loaded_msg: db "Kernel successfully loaded!", 0
+no_boot_dir_errmsg: db "No boot directory found!", 0
+no_kern_errmsg: db "No kernel (KERN) file found in /boot/", 0

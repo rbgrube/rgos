@@ -19,7 +19,7 @@ section .text
 _calc_cluster_lba:
 
     ; BPB_RsvdSecCnt + (BPB_NumFATs * BPB_FATSz32) + ((CLUSTER_NUM - 2) * BPB_SecPerClus)
-
+    break6:
     ; Save cluster num
     mov edx, eax
     push ax
@@ -211,8 +211,9 @@ _read_FAT_cluster_sectors:
         push cx
 
         mov eax, esi
-
+        break4:
         call _calc_cluster_lba ; eax now holds cluster LBA
+        break5:
         add eax, dword [fat_partition_start_lba] ; add offset from begging of partition
 
         ; pop ecx
@@ -223,6 +224,8 @@ _read_FAT_cluster_sectors:
         add eax, ecx ; Add the number of sectors read so far to the current LBA
         mov dword [read_cluster_sectors_start], eax ; Set the starting sector for the read operation
         
+        break3:
+
         mov eax, 0
         mov esi, 0
 
@@ -280,4 +283,115 @@ _read_FAT_cluster_sectors:
         dd 0                            ; Sector to start at, quad word, but only first double will be filled
         dd 0
 
+
+section .text
+; Finds a file or directory in a FAT directory
+
+; Starts at cluster number in esi
+; Takes first 4 bytes of name in ecx
+; Returns address of a 32 byte diretory entry in DX:SI
+; Sets carry if couldnt find anything
+global _find_in_FAT_dir
+_find_in_FAT_dir:
+
+    mov dword [find_target_name], ecx ; store target name
+
+    mov esi, esi ; Starting cluster num
+    mov ax, _entry_find_cluster_modifier
+    mov bx, _entry_find_clusters_finished  
+
+    call _follow_FAT_cluster_chain
+
+    mov dx, stage2_loaded_segment
+    mov si, found_dir_entry
+
+    ret
+
+    _entry_find_cluster_modifier:
+
+        mov esi, esi ; each cluster Num
+        mov ax, _entry_find_sector_modifier
+
+        break2:
+
+        call _read_FAT_cluster_sectors
+
+        ret
+
+        ; DX:SI as the segment offset pointer to the first byte of the sector in memeory 
+        ; Ran on every sector of cluster
+        ; 32 Byte entries
+        _entry_find_sector_modifier:
+
+            mov bx, 0
+
+            _sector_entry_loop:
+
+                push es
+
+                mov eax, dword [find_target_name]
+
+                mov es, dx
+
+                mov ecx, dword es:[si + bx] ; in FAT directory entry name offset is 0
+
+                cmp eax, ecx
+                je _found_target
+
+                pop es
+
+                add bx, 0x20 ; Increment entry 32 bytes
+                cmp bx, 0x200 ; if goes over sector
+
+                jge _sector_over
+
+                jmp _sector_entry_loop
+            
+            _sector_over:
+
+                ret
+
+            _found_target:
+    
+                mov ax, 0
+
+                _copy_entry_to_buffer_loop:
+
+                    ; copy byte
+                    push bx
+                    add bx, ax
+                    mov cl, byte es:[si + bx]
+
+                    lea bx, found_dir_entry
+                    add bx, ax
+                    mov byte [bx], cl
+
+                    pop bx
+
+                    add ax, 1
+                    cmp ax, 32
+
+                    jl _copy_entry_to_buffer_loop ; Copy all 32 bytes
+
+                mov byte [end_follow_early], 0x1 ; break early from cluster chain
+
+                pop es ; Retsore es before returning bc of JMP
+
+                ret
+
+    _entry_find_clusters_finished:
+
+        ; Did not find the file
+
+        stc ; Set carry bit
+        ret
+
+
+section .bss
+
+find_target_name:
+    resb 4
+
+found_dir_entry:
+    resb 32
 ; End of FAT helpers

@@ -1,0 +1,25 @@
+<RGOS Stage 1 Bootloader> Initiated segments and stack.
+<RGOS Stage 1 Bootloader> Executing...
+<RGOS Stage 1 Bootloader> Reading second stage bootloader into memory...
+<RGOS Stage 1 Bootloader> Error reading stage 2 into memory!
+ß
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

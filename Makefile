@@ -4,6 +4,7 @@ QEMU = qemu-system-i386
 LD = i686-elf-ld
 CLANG = clang
 GDB = gdb
+BOCHS=bochs
 
 BUILD_DIR = build
 
@@ -11,6 +12,7 @@ BIN = $(BUILD_DIR)/bin
 DEBUG = $(BUILD_DIR)/debug
 IMAGE = $(BUILD_DIR)/image
 OBJ = $(BUILD_DIR)/obj
+SYSROOT = $(BUILD_DIR)/sysroot
 
 RGOS_IMG = $(IMAGE)/rgos.img
 
@@ -23,20 +25,23 @@ STAGE_2_BOOTLOADER = $(BIN)/RGOS_stage2_bootloader.bin
 STAGE_2_BOOTLOADER_INC = boot/bootloader/legacy/second_stage/include
 STAGE2_OBJ_PATH = $(OBJ)/stage2
 
-KERNEL = $(BIN)/kernel.bin
+KERNEL = $(SYSROOT)/boot/kernel.bin
 KERNEL_SRC = src/kernel
 KERNEL_LINKERSCRIPT = src/kernel/kernel.ld
+KERNEL_OBJ_PATH = $(OBJ)/kernel
+KERNEL_INC_PATH = $(KERNEL_SRC)/include
 
+BOCHS_CFG = config/bochs.cfg 
 
 define make-dir
 	@mkdir -p $1
 endef
 
 # Ensure necessary directories exist
-$(BIN) $(OBJ) $(IMAGE) $(DEBUG) $(STAGE2_OBJ_PATH):
+$(BIN) $(OBJ) $(IMAGE) $(DEBUG) $(STAGE2_OBJ_PATH) $(KERNEL_OBJ_PATH) $(SYSROOT):
 	$(call make-dir,$@)
 
-all: $(RGOS_IMG) install_stage1 install_stage2 install_kernel
+all: $(RGOS_IMG) install_stage1 install_stage2 build_kernel copy_sysroot
 
 # Create RGOS image with partitions
 $(RGOS_IMG): $(IMAGE)
@@ -53,7 +58,6 @@ $(RGOS_IMG): $(IMAGE)
 		hdiutil detach $$DISK_ID; \
 	fi
 
-
 # Build stage1
 $(STAGE_1_BOOTLOADER): $(BIN) $(DEBUG) $(OBJ) $(STAGE_1_BOOTLOADER_SRC)
 	@echo "Assembling rgos bootloader..."
@@ -66,7 +70,6 @@ $(STAGE_1_BOOTLOADER): $(BIN) $(DEBUG) $(OBJ) $(STAGE_1_BOOTLOADER_SRC)
 install_stage1: $(STAGE_1_BOOTLOADER)
 	@echo "Installing first stage bootloader..."
 	dd if=$(STAGE_1_BOOTLOADER) of=$(RGOS_IMG) bs=446 count=1 conv=notrunc
-
 
 # Build stage2
 STG2_ASM_SRCS := $(wildcard $(STAGE_2_BOOTLOADER_SRC)/*.asm) $(wildcard $(STAGE_2_BOOTLOADER_SRC)/**/*.asm)
@@ -93,30 +96,38 @@ install_stage2: $(STAGE_2_BOOTLOADER)
 
 # Build kernel
 
-KERNEL_C_SRCS := $(wildcard $(KERNEL_SRC)/*.c)
-KERNEL_OBJS := $(patsubst $(KERNEL_SRC)/%.c, $(OBJ)/%.o, $(KERNEL_C_SRCS))
-KERNEL_ASM_SRCS := $(wildcard $(KERNEL_SRC)/*.asm)
-KERNEL_ASM_OBJS := $(patsubst $(KERNEL_SRC)/%.asm, $(OBJ)/%.o, $(KERNEL_ASM_SRCS))
+KERNEL_C_SRCS := $(wildcard $(KERNEL_SRC)/*.c) $(wildcard $(KERNEL_SRC)/**/*.c)
+KERNEL_OBJS := $(patsubst $(KERNEL_SRC)/%.c, $(KERNEL_OBJ_PATH)/%.o, $(KERNEL_C_SRCS))
+KERNEL_ASM_SRCS := $(wildcard $(KERNEL_SRC)/*.asm) $(wildcard $(KERNEL_SRC)/**/*.asm)
+KERNEL_ASM_OBJS := $(patsubst $(KERNEL_SRC)/%.asm, $(KERNEL_OBJ_PATH)/%.o, $(KERNEL_ASM_SRCS))
 
-build_kernel: $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) $(OBJ) $(KERNEL_LINKERSCRIPT) $(DEBUG)
+$(KERNEL): $(SYSROOT)
+	mkdir -p $(SYSROOT)/boot
 
-	@for file in $(KERNEL_C_SRCS); do \
-		obj_file="$(OBJ)/$$(basename $$file .c).o"; \
-		echo "Compiling $$file -> $$obj_file"; \
-		$(CLANG) -g --target=i686-elf -ffreestanding -c $$file -o $$obj_file; \
-	done; \
+build_kernel: $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) $(KERNEL_OBJ_PATH) $(KERNEL_LINKERSCRIPT) $(DEBUG) $(KERNEL_INC_PATH) $(KERNEL)
 
 	@for file in $(KERNEL_ASM_SRCS); do \
-		obj_file="$(OBJ)/$$(basename $$file .asm).o"; \
+		rel_path=$${file#$(KERNEL_SRC)/}; \
+		obj_file="$(KERNEL_OBJ_PATH)/$${rel_path%.asm}.o"; \
+		mkdir -p $$(dirname $$obj_file); \
 		echo "Assembling $$file -> $$obj_file"; \
 		$(AS) -f elf -F dwarf -g $$file -o $$obj_file; \
+	done; \
+
+	@for file in $(KERNEL_C_SRCS); do \
+		rel_path=$${file#$(KERNEL_SRC)/}; \
+		obj_file="$(KERNEL_OBJ_PATH)/$${rel_path%.c}.o"; \
+		mkdir -p $$(dirname $$obj_file); \
+		echo "Compiling $$file -> $$obj_file"; \
+		$(CLANG) -g --target=i686-elf -ffreestanding -c -I$(KERNEL_INC_PATH) $$file -o $$obj_file; \
 	done; \
 
 	$(LD) -m elf_i386 -T$(KERNEL_LINKERSCRIPT) --oformat elf32-i386 -z noexecstack  -o $(DEBUG)/kernel.elf $(KERNEL_OBJS) $(KERNEL_ASM_OBJS)
 
 	objcopy -O binary $(DEBUG)/kernel.elf $(KERNEL)
 
-install_kernel: build_kernel $(RGOS_IMG)
+
+copy_sysroot: $(SYSROOT) $(RGOS_IMG)
 
 	@echo "Mounting FAT partition..."; \
 	PARTITION_INFO=$$(sudo hdiutil attach $(RGOS_IMG)); \
@@ -125,7 +136,7 @@ install_kernel: build_kernel $(RGOS_IMG)
 	MOUNT_VOL=$$(echo $$PARTITION_INFO | grep DOS_FAT_32 | awk '/\/Volumes\// {match($$0, /\/Volumes\/.*/); print substr($$0, RSTART)}'); \
 	echo "Partition $$PARTITION_ID mounted at $$MOUNT_VOL"; \
 	echo "Copying kernel into image..."; \
-	sudo cp $(KERNEL) "$$MOUNT_VOL"; \
+	sudo cp -a $(SYSROOT)/. "$$MOUNT_VOL"; \
 	echo "Detaching $$DISK_ID"; \
 	hdiutil detach "$$DISK_ID"; \
 
@@ -135,11 +146,18 @@ run: all
 	@echo "Running bootloader in QEMU..."
 	$(QEMU) -d int -no-reboot -drive file=$(RGOS_IMG),format=raw -monitor stdio
 	
+# Executes
+run_bochs: all $(BOCHS_CFG)
+
+	@echo "Running in Bochs..."
+	$(BOCHS) -f $(BOCHS_CFG)
+	
+
 run_GDB: all
 
 	@echo "Running bootloader in QEMU..."
 	$(QEMU) -d int -no-reboot  -drive file=$(RGOS_IMG),format=raw -monitor stdio -S -gdb tcp::1234 &
-	$(GDB) -ex "target remote localhost:1234" $(DEBUG)/kernel.elf
+	$(GDB) -ex "target remote localhost:1234" $(DEBUG)/RGOS_stage2_bootloader.elf
 
 clean:
 	@echo "Cleaning up build directories and files..."
