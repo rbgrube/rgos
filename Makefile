@@ -4,7 +4,8 @@ QEMU = qemu-system-i386
 LD = i686-elf-ld
 CLANG = clang
 GDB = gdb
-BOCHS=bochs
+
+#BOCHS=bochs
 
 BUILD_DIR = build
 
@@ -16,13 +17,13 @@ SYSROOT = $(BUILD_DIR)/sysroot
 
 RGOS_IMG = $(IMAGE)/rgos.img
 
-STAGE_1_BOOTLOADER_SRC = boot/bootloader/legacy/RGOS_stage1_bootloader.asm
+STAGE_1_BOOTLOADER_SRC = src/bootloader/legacy/RGOS_stage1_bootloader.asm
 STAGE_1_BOOTLOADER = $(BIN)/RGOS_stage1_bootloader.bin
 
-STAGE_2_BOOTLOADER_SRC = boot/bootloader/legacy/second_stage/src
-STAGE_2_LINKERSCRIPT = boot/bootloader/legacy/second_stage/linker.ld
+STAGE_2_BOOTLOADER_SRC = src/bootloader/legacy/second_stage/src
+STAGE_2_LINKERSCRIPT = src/bootloader/legacy/second_stage/linker.ld
 STAGE_2_BOOTLOADER = $(BIN)/RGOS_stage2_bootloader.bin
-STAGE_2_BOOTLOADER_INC = boot/bootloader/legacy/second_stage/include
+STAGE_2_BOOTLOADER_INC = src/bootloader/legacy/second_stage/include
 STAGE2_OBJ_PATH = $(OBJ)/stage2
 
 KERNEL = $(SYSROOT)/boot/kernel.bin
@@ -31,7 +32,7 @@ KERNEL_LINKERSCRIPT = src/kernel/kernel.ld
 KERNEL_OBJ_PATH = $(OBJ)/kernel
 KERNEL_INC_PATH = $(KERNEL_SRC)/include
 
-BOCHS_CFG = config/bochs.cfg 
+#BOCHS_CFG = config/bochs.cfg 
 
 define make-dir
 	@mkdir -p $1
