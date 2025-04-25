@@ -3,7 +3,7 @@
 global startmsg, boot_device_msg, read_partition_table_msg, found_partition_msg, no_part_errmsg, \
        read_FAT32_boot_msg, read_FAT32_boot_successmsg, read_FAT32_boot_errmsg, load_BPB_info_msg, \
        read_fat_table_sector_eemsg, read_FAT_cluster_sectors_errmsg, locate_kern_msg, \
-       locate_kern_finish_chain_msg, found_kernel_msg, loading_kernel_msg, read_sector_errmsg, \
+       locate_kern_finish_chain_msg, found_kernel_msg, read_sector_errmsg, \
        enter_unreal_msg, entered_unreal_comp_msg, TEST
 
 section .data
@@ -32,7 +32,6 @@ locate_kern_msg: db "Locating kernel in FAT32 root directory...", 0
 locate_kern_finish_chain_msg: db "No kernel in root directory cluster chain!", 0
 found_kernel_msg: db "Found kernel!", 0
 
-loading_kernel_msg: db "Loading kernel into memeory...", 0
 
 enter_unreal_msg: db "Entering unreal mode...", 0
 entered_unreal_comp_msg: db "Succsesfully entered unreal mode!", 0

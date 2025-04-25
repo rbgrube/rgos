@@ -45,9 +45,12 @@ _stage2_start:
     ; Give the boot info a memeory map
     call _populate_mem_map
 
+    call _load_kernel
+
     call _init_vbe
 
-    call _load_kernel
+    call _jump_to_kernel_entry
+
 
     jmp $
 

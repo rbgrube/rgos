@@ -19,13 +19,10 @@ section .text
 _calc_cluster_lba:
 
     ; BPB_RsvdSecCnt + (BPB_NumFATs * BPB_FATSz32) + ((CLUSTER_NUM - 2) * BPB_SecPerClus)
-    break6:
+    
+
     ; Save cluster num
-    mov edx, eax
-    push ax
-    shr eax, 16
-    push ax 
-    mov eax, edx
+    push eax
 
     ; Accumulator
 
@@ -40,9 +37,7 @@ _calc_cluster_lba:
     add ecx, eax
 
     ; Restore cluster num
-    pop ax
-    shl eax, 16
-    pop ax 
+    pop eax
 
     sub eax, 2 ; Clusters are indexed at 2
 
@@ -54,8 +49,9 @@ _calc_cluster_lba:
 
     ; Final value now in eax
 
-    mov dword eax, ecx ; Store the calculated root directory start in sectors
-    
+    mov dword eax, ecx ; Store the calculated cluster start in sectors
+
+
     ret
 
 ; Takes cluster number in esi and reads the next cluster from the FAT table
@@ -150,33 +146,15 @@ end_follow_early: db 0 ; Returns imeaditley if this is not 0 and resets it
 section .text
 _follow_FAT_cluster_chain:
 
-    ; Preserve AX
-    push ax        
-    
-    ; Preserve BX 
-    push bx      
-    
-    mov edx, esi
-    ; Preserve ESI (32-bit)
-    push si        ; Push lower 16 bits of ESI
-    shr esi, 16    ; Shift upper 16 bits into SI
-    push si        ; Push upper 16 bits of ESI
-    mov esi, edx
+    pushad
+    push esi
     
     call ax
 
-    ; Restore ESI (32-bit)
-    pop si         ; Pop upper 16 bits into SI
-    shl esi, 16    ; Shift upper 16 bits into the high part of ESI
-    pop si         ; Pop lower 16 bits into SI
+    pop esi
 
     call _fetch_next_FAT_cluster ; Find next cluster and store in ESI
 
-    ; Restore BX 
-    pop bx
-
-    ; Restore AX
-    pop ax
 
     cmp byte [end_follow_early], 0
     jne _follow_FAT_cluster_chain_return ; If break ealry set, return
@@ -185,20 +163,27 @@ _follow_FAT_cluster_chain:
     cmp esi, 0xFFFFFFFF
     je _follow_FAT_cluster_chain_finished ; If ESI is 0xFFFFFFFF, we reached the end of the chain
     
+    popad
+
     jmp _follow_FAT_cluster_chain
 
 _follow_FAT_cluster_chain_finished:
+    popad
+
     call bx
     jmp _follow_FAT_cluster_chain_return
 
 _follow_FAT_cluster_chain_return:
+    popad
+
     mov byte [end_follow_early], 0
     ret
 
 ; Reads the FAT cluster number in esi to memory sector by sector
+; Sector in cluster to start at in ECX
 ; Calls function at ax on each sector, with DX:SI as the segment offset pointer to the first byte of the sector in memeory 
 _read_FAT_cluster_sectors:
-    mov ecx, 0 ; Amount of sectors read
+    ; mov ecx, 0 ; Amount of sectors read ; Set by calee
 
     _read_FAT_cluster_sectors_loop:
 
@@ -211,9 +196,9 @@ _read_FAT_cluster_sectors:
         push cx
 
         mov eax, esi
-        break4:
+
         call _calc_cluster_lba ; eax now holds cluster LBA
-        break5:
+
         add eax, dword [fat_partition_start_lba] ; add offset from begging of partition
 
         ; pop ecx
@@ -224,7 +209,6 @@ _read_FAT_cluster_sectors:
         add eax, ecx ; Add the number of sectors read so far to the current LBA
         mov dword [read_cluster_sectors_start], eax ; Set the starting sector for the read operation
         
-        break3:
 
         mov eax, 0
         mov esi, 0
@@ -312,8 +296,7 @@ _find_in_FAT_dir:
         mov esi, esi ; each cluster Num
         mov ax, _entry_find_sector_modifier
 
-        break2:
-
+        mov ecx, 0
         call _read_FAT_cluster_sectors
 
         ret
@@ -335,10 +318,10 @@ _find_in_FAT_dir:
 
                 mov ecx, dword es:[si + bx] ; in FAT directory entry name offset is 0
 
+                pop es
+
                 cmp eax, ecx
                 je _found_target
-
-                pop es
 
                 add bx, 0x20 ; Increment entry 32 bytes
                 cmp bx, 0x200 ; if goes over sector
@@ -352,30 +335,29 @@ _find_in_FAT_dir:
                 ret
 
             _found_target:
-    
-                mov ax, 0
 
-                _copy_entry_to_buffer_loop:
+                ; DX:SI as the segment offset pointer to the first byte of the sector in memeory 
+                ; BX is offset of dir entry
+                cli
+                push ds
+                push es
 
-                    ; copy byte
-                    push bx
-                    add bx, ax
-                    mov cl, byte es:[si + bx]
+                mov ds, dx  ; DS:SI source
+                mov si, si
+                add si, bx
 
-                    lea bx, found_dir_entry
-                    add bx, ax
-                    mov byte [bx], cl
+                mov ax, stage2_loaded_segment ; ES:DI source
+                mov es, ax
+                mov di, found_dir_entry
 
-                    pop bx
+                mov cx, 32 ; Copy 32 bytes
+                rep movsb
 
-                    add ax, 1
-                    cmp ax, 32
-
-                    jl _copy_entry_to_buffer_loop ; Copy all 32 bytes
+                pop es
+                pop ds
+                sti
 
                 mov byte [end_follow_early], 0x1 ; break early from cluster chain
-
-                pop es ; Retsore es before returning bc of JMP
 
                 ret
 
@@ -387,7 +369,123 @@ _find_in_FAT_dir:
         ret
 
 
+; Takes a starting cluster number in esi
+; Takes a starting offset (sectors) in edx
+; Takes a length (sectors) in ebx
+; Writes to a buffer in es:di
+global _read_sectors_from_file
+_read_sectors_from_file:
+    b:
+
+    mov word [read_sectors_loc], es
+    mov word [read_sectors_loc + 2], di
+    mov dword [read_sectors_len], ebx
+    mov dword [current_sectors_read], 0
+
+    mov esi, esi
+
+    push ebx
+
+    ; Calc cluster and sector to start reading from
+
+    mov eax, edx
+    mov edx, 0      ; starting sector stored in edx:eax
+
+    movzx ebx, byte [BPB_SecPerClus]
+    div  ebx ; starting sector / sec per clus = cluster offset
+
+    ;mov eax, eax ; Result stored in eax
+    mov ecx, edx ; Remainder (sector offset in cluster) stored in edx -> ecx
+    push ecx
+
+    ; find starting cluster number from cluster offset
+
+    mov ebx, 0 ; amount of clusters traversed
+    mov esi, esi ; starting cluster
+
+    _traverse_chain_by_offset_loop:
+
+        cmp ebx, eax ; See if weve traversed enough clusters
+        jge _traverse_chain_by_offset_done
+
+        call _fetch_next_FAT_cluster
+        add ebx, 1
+
+        jmp _traverse_chain_by_offset_loop
+    
+    _traverse_chain_by_offset_done:
+
+    pop ecx
+
+    ; Now esi holds the cluster number to start at and ecx holds the sector offset in that cluster
+
+    pop ebx
+
+    mov ax, _read_file_cluster_mod
+    mov bx, _read_file_cluster_done
+    call _follow_FAT_cluster_chain
+
+    _read_file_cluster_mod:
+
+        mov esi, esi ; Current cluster num
+        mov ax, _read_file_sector_mod
+        ; mov ecx, ecx ; start at sector offet
+        call _read_FAT_cluster_sectors
+
+        _read_file_sector_mod:
+            ; DX:SI as the segment offset pointer to the first byte of the sector in memeory 
+
+            _read_file_sector_mod_loop:
+
+                mov eax, dword [current_sectors_read]
+                cmp eax, dword [read_sectors_len] ; Check if weve read all sectors
+                jge _read_all_req_sectors
+
+                ; Copy sector contents to specified memeory location:
+
+                pushad
+
+                mov ds, dx ; Source segment
+                mov si, si ; Source offset
+
+                mov bx, word [read_sectors_loc]
+                mov es, bx                      ; Dest segment
+                mov di, word [read_sectors_loc + 2] ; Dest offset
+
+                mov ecx, 512 ; Times to repeat movsb
+                rep movsb    ; Copy 512 bytes from source to destination
+
+                popad
+
+                add eax, 1 ; Increment amt of sectors read
+                mov dword [current_sectors_read], eax
+
+                jmp _read_file_sector_mod_loop
+
+            _read_all_req_sectors:
+
+                mov byte [end_follow_early], 1
+
+                ret
+
+        mov ecx, 0 ; sector offset only for first cluster read
+
+        ret
+
+    _read_file_cluster_done:
+
+    ret
+
+
 section .bss
+
+read_sectors_loc:
+    resb 4
+read_sectors_len:
+    resb 4
+current_sectors_read:
+    resb 4
+
 
 find_target_name:
     resb 4

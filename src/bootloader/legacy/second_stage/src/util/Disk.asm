@@ -16,6 +16,8 @@ global _read_sector
 ; BX:DI = Memory location to store data in
 
 _read_sector:
+    push bx
+    push di
 
     mov word [sector_offset], di
     mov word [sector_segment], bx
@@ -27,6 +29,9 @@ _read_sector:
     mov dl, [rgos_bd]           ; dl is the device to read from (boot drive)
     mov si, SECTOR_DAP          ; A disk address packet (DAP) that describes what to read and where
     int 0x13                    ; Call BIOS to read sectors
+
+    pop di
+    pop bx
 
     jc _read_sector_err
 

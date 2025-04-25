@@ -1,4 +1,5 @@
 #include <stdint.h>
+#include "boot/GDT.h"
 #include "boot/bootinfo.h"
 
 void kernel_main(void) {
@@ -28,6 +29,8 @@ void kernel_main(void) {
             line_start[i] = pixel_value; // Set pixel in this row
         }
     }
+
+    init_GDT();
 
     // Hang forever
     while (1) {
