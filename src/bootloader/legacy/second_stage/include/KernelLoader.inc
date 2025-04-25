@@ -1,5 +1,3 @@
 extern _locate_kernel
 
 extern _load_kernel
-
-extern _jump_to_kernel_entry

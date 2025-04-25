@@ -12,6 +12,7 @@ extern read_FAT_cluster_sectors_errmsg
 extern locate_kern_msg 
 extern locate_kern_finish_chain_msg 
 extern found_kernel_msg 
+extern loading_kernel_msg
 extern read_sector_errmsg
 extern enter_unreal_msg
 extern entered_unreal_comp_msg

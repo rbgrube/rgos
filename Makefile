@@ -26,7 +26,7 @@ STAGE_2_BOOTLOADER = $(BIN)/RGOS_stage2_bootloader.bin
 STAGE_2_BOOTLOADER_INC = src/bootloader/legacy/second_stage/include
 STAGE2_OBJ_PATH = $(OBJ)/stage2
 
-KERNEL = $(SYSROOT)/boot/kernel.elf
+KERNEL = $(SYSROOT)/boot/kernel.bin
 KERNEL_SRC = src/kernel
 KERNEL_LINKERSCRIPT = src/kernel/kernel.ld
 KERNEL_OBJ_PATH = $(OBJ)/kernel
@@ -123,9 +123,9 @@ build_kernel: $(KERNEL_C_SRCS) $(KERNEL_ASM_SRCS) $(KERNEL_OBJ_PATH) $(KERNEL_LI
 		$(CLANG) -g --target=i686-elf -ffreestanding -c -I$(KERNEL_INC_PATH) $$file -o $$obj_file; \
 	done; \
 
-	$(LD) -m elf_i386 -T$(KERNEL_LINKERSCRIPT) --oformat elf32-i386 -z noexecstack  -o $(KERNEL) $(KERNEL_OBJS) $(KERNEL_ASM_OBJS)
+	$(LD) -m elf_i386 -T$(KERNEL_LINKERSCRIPT) --oformat elf32-i386 -z noexecstack  -o $(DEBUG)/kernel.elf $(KERNEL_OBJS) $(KERNEL_ASM_OBJS)
 
-#	objcopy -O binary $(DEBUG)/kernel.elf $(KERNEL)
+	objcopy -O binary $(DEBUG)/kernel.elf $(KERNEL)
 
 
 copy_sysroot: $(SYSROOT) $(RGOS_IMG)
@@ -136,7 +136,7 @@ copy_sysroot: $(SYSROOT) $(RGOS_IMG)
 	DISK_ID=$$(echo "$$PARTITION_ID" | head -n 1 | awk '{print $$1}'); \
 	MOUNT_VOL=$$(echo $$PARTITION_INFO | grep DOS_FAT_32 | awk '/\/Volumes\// {match($$0, /\/Volumes\/.*/); print substr($$0, RSTART)}'); \
 	echo "Partition $$PARTITION_ID mounted at $$MOUNT_VOL"; \
-	echo "Copying sysroot into image..."; \
+	echo "Copying kernel into image..."; \
 	sudo cp -a $(SYSROOT)/. "$$MOUNT_VOL"; \
 	echo "Detaching $$DISK_ID"; \
 	hdiutil detach "$$DISK_ID"; \
